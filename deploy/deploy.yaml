@@ -1,21 +1,19 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: todo-app
-  labels:
-    app: nginx
+  name: aravind-app
 spec:
-  replicas: 3
+  replicas: 1
   selector:
     matchLabels:
-      app: nginx
+      app: aravind
   template:
     metadata:
       labels:
-        app: nginx
+        app: aravind
     spec:
       containers:
-      - name: todo
-        image: abhishekf5/todo-app:v1
+      - name: aravind
+        image: aravindkumar0895/aravind:1
         ports:
         - containerPort: 8000
