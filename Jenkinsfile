@@ -27,16 +27,29 @@ pipeline {
             }
         }
 
-        stage('Push the artifacts'){
-           steps{
-                script{
-                    sh '''
-                    echo 'Push to Repo'
-                    docker push aravindkumar0895/aravind:${BUILD_NUMBER}
-                    '''
-                }
-            }
+        stage('Push to Docker Hub') {
+    steps {
+        withCredentials([
+            usernamePassword(
+                credentialsId: 'dockerhub-creds',
+                usernameVariable: 'DOCKER_USER',
+                passwordVariable: 'DOCKER_PASS'
+            )
+        ]) {
+            sh '''
+            echo "Logging into Docker Hub..."
+            echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
+
+            docker whoami
+
+            echo "Pushing image..."
+            docker push aravindkumar0895/aravind:${BUILD_NUMBER}
+
+            docker logout
+            '''
         }
+    }
+}
         
         stage('Checkout K8S manifest SCM'){
             steps {
