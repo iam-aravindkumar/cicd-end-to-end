@@ -40,7 +40,6 @@ pipeline {
             echo "Logging into Docker Hub..."
             echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
 
-            docker whoami
 
             echo "Pushing image..."
             docker push aravindkumar0895/aravind:${BUILD_NUMBER}
