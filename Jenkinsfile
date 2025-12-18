@@ -10,7 +10,7 @@ pipeline {
     stages {
 
         /* ===============================
-           1. Checkout Application Source
+           1. Checkout Application Repo
            =============================== */
         stage('Checkout App Repo') {
             steps {
@@ -46,10 +46,8 @@ pipeline {
                     )
                 ]) {
                     sh '''
-                    echo "Logging into Docker Hub..."
                     echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
 
-                    echo "Pushing image tags..."
                     docker push ${IMAGE_NAME}:${IMAGE_TAG}
                     docker push ${IMAGE_NAME}:latest
 
@@ -60,59 +58,38 @@ pipeline {
         }
 
         /* ===============================
-           4. Checkout K8S Manifest Repo
+           4. Update K8S Manifest & Push
            =============================== */
-        stage('Checkout K8S Manifests Repo') {
+        stage('Update K8S Manifest') {
             steps {
-                dir('manifests') {
-                    git credentialsId: 'github-creds',
-                        url: 'https://github.com/iam-aravindkumar/cicd-demo-manifests-repo.git',
-                        branch: 'main'
-                }
-            }
-        }
+                withCredentials([
+                    usernamePassword(
+                        credentialsId: 'github-creds',
+                        usernameVariable: 'GIT_USERNAME',
+                        passwordVariable: 'GIT_PASSWORD'
+                    )
+                ]) {
+                    sh '''
+                    echo "Updating Kubernetes manifest..."
 
-        /* ===============================
-           5. Update Manifest & Push (GitOps)
-           =============================== */
-        stage('Update Manifest & Push') {
-            steps {
-                dir('manifests') {
-                    withCredentials([
-                        usernamePassword(
-                            credentialsId: 'github-creds',
-                            usernameVariable: 'GIT_USERNAME',
-                            passwordVariable: 'GIT_PASSWORD'
-                        )
-                    ]) {
-                        sh '''
-                        echo "Updating deployment manifest..."
+                    git config user.name "jenkins"
+                    git config user.email "jenkins@local"
 
-                        git config user.name "jenkins"
-                        git config user.email "jenkins@local"
+                    sed -i "s|image:.*|image: ${IMAGE_NAME}:${IMAGE_TAG}|g" deploy/deploy.yaml
 
-                        sed -i "s|image:.*|image: ${IMAGE_NAME}:${IMAGE_TAG}|g" deploy.yaml
+                    git add deploy/deploy.yaml
+                    git commit -m "ci: update image tag to ${IMAGE_TAG}" || echo "No changes to commit"
 
-                        git add deploy.yaml
-                        git commit -m "ci: update image tag to ${IMAGE_TAG}" || echo "No changes to commit"
-
-                        git push https://${GIT_USERNAME}:${GIT_PASSWORD}@github.com/iam-aravindkumar/cicd-demo-manifests-repo.git HEAD:main
-                        '''
-                    }
+                    git push https://${GIT_USERNAME}:${GIT_PASSWORD}@github.com/iam-aravindkumar/cicd-end-to-end.git HEAD:main
+                    '''
                 }
             }
         }
     }
 
-    /* ===============================
-       6. Post Actions
-       =============================== */
     post {
         success {
             echo "✅ Pipeline completed successfully"
-        }
-        failure {
-            echo "❌ Pipeline failed"
         }
         always {
             sh 'docker system prune -f || true'
