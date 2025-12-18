@@ -1,79 +1,121 @@
 pipeline {
-    
-    agent any 
-    
+
+    agent any
+
     environment {
-        IMAGE_TAG = "${BUILD_NUMBER}"
+        IMAGE_NAME = "aravindkumar0895/aravind"
+        IMAGE_TAG  = "${BUILD_NUMBER}"
     }
-    
+
     stages {
-        
-        stage('Checkout'){
-           steps {
-                git credentialsId: 'dockerhub-creds', 
-                url: 'https://github.com/iam-aravindkumar/cicd-end-to-end',
-                branch: 'main'
-           }
+
+        /* ===============================
+           1. Checkout Application Source
+           =============================== */
+        stage('Checkout App Repo') {
+            steps {
+                git credentialsId: 'github-creds',
+                    url: 'https://github.com/iam-aravindkumar/cicd-end-to-end',
+                    branch: 'main'
+            }
         }
 
-        stage('Build Docker'){
-            steps{
-                script{
+        /* ===============================
+           2. Build Docker Image
+           =============================== */
+        stage('Build Docker Image') {
+            steps {
+                sh '''
+                echo "Building Docker image..."
+                docker build -t ${IMAGE_NAME}:${IMAGE_TAG} .
+                docker tag ${IMAGE_NAME}:${IMAGE_TAG} ${IMAGE_NAME}:latest
+                '''
+            }
+        }
+
+        /* ===============================
+           3. Push Image to Docker Hub
+           =============================== */
+        stage('Push Image to Docker Hub') {
+            steps {
+                withCredentials([
+                    usernamePassword(
+                        credentialsId: 'dockerhub-creds',
+                        usernameVariable: 'DOCKER_USER',
+                        passwordVariable: 'DOCKER_PASS'
+                    )
+                ]) {
                     sh '''
-                    echo 'Buid Docker Image'
-                    docker build -t aravindkumar0895/aravind:${BUILD_NUMBER} .
+                    echo "Logging into Docker Hub..."
+                    echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
+
+                    echo "Pushing image tags..."
+                    docker push ${IMAGE_NAME}:${IMAGE_TAG}
+                    docker push ${IMAGE_NAME}:latest
+
+                    docker logout
                     '''
                 }
             }
         }
 
-        stage('Push to Docker Hub') {
-    steps {
-        withCredentials([
-            usernamePassword(
-                credentialsId: 'dockerhub-creds',
-                usernameVariable: 'DOCKER_USER',
-                passwordVariable: 'DOCKER_PASS'
-            )
-        ]) {
-            sh '''
-            echo "Logging into Docker Hub..."
-            echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
-
-
-            echo "Pushing image..."
-            docker push aravindkumar0895/aravind:${BUILD_NUMBER}
-
-            docker logout
-            '''
-        }
-    }
-}
-        
-        stage('Checkout K8S manifest SCM'){
+        /* ===============================
+           4. Checkout K8S Manifest Repo
+           =============================== */
+        stage('Checkout K8S Manifests Repo') {
             steps {
-                git credentialsId: 'dockerhub-creds', 
-                url: 'https://github.com/iam-aravindkumar/cicd-demo-manifests-repo.git',
-                branch: 'main'
+                dir('manifests') {
+                    git credentialsId: 'github-creds',
+                        url: 'https://github.com/iam-aravindkumar/cicd-demo-manifests-repo.git',
+                        branch: 'main'
+                }
             }
         }
-        
-        stage('Update K8S manifest & push to Repo'){
+
+        /* ===============================
+           5. Update Manifest & Push (GitOps)
+           =============================== */
+        stage('Update Manifest & Push') {
             steps {
-                script{
-                    withCredentials([usernamePassword(credentialsId: 'dockerhub-creds', passwordVariable: 'GIT_PASSWORD', usernameVariable: 'GIT_USERNAME')]) {
+                dir('manifests') {
+                    withCredentials([
+                        usernamePassword(
+                            credentialsId: 'github-creds',
+                            usernameVariable: 'GIT_USERNAME',
+                            passwordVariable: 'GIT_PASSWORD'
+                        )
+                    ]) {
                         sh '''
-                        cat deploy.yaml
-                        sed -i '' "s/32/${BUILD_NUMBER}/g" deploy.yaml
-                        cat deploy.yaml
+                        echo "Updating deployment manifest..."
+
+                        git config user.name "jenkins"
+                        git config user.email "jenkins@local"
+
+                        sed -i "s|image:.*|image: ${IMAGE_NAME}:${IMAGE_TAG}|g" deploy.yaml
+
                         git add deploy.yaml
-                        git commit -m 'Updated the deploy yaml | Jenkins Pipeline'
-                        git remote -v
-                        git push https://github.com/iam-aravindkumar/cicd-demo-manifests-repo.git HEAD:main
-                        '''                        
+                        git commit -m "ci: update image tag to ${IMAGE_TAG}" || echo "No changes to commit"
+
+                        git push https://${GIT_USERNAME}:${GIT_PASSWORD}@github.com/iam-aravindkumar/cicd-demo-manifests-repo.git HEAD:main
+                        '''
                     }
                 }
             }
+        }
+    }
+
+    /* ===============================
+       6. Post Actions
+       =============================== */
+    post {
+        success {
+            echo "✅ Pipeline completed successfully"
+        }
+        failure {
+            echo "❌ Pipeline failed"
+        }
+        always {
+            sh 'docker system prune -f || true'
         }
     }
 }
