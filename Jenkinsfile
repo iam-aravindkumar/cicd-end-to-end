@@ -1,4 +1,3 @@
-// hello
 pipeline {
 
     agent any
