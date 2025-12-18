@@ -14,6 +14,6 @@ spec:
     spec:
       containers:
       - name: aravind
-        image: aravindkumar0895/aravind:13
+        image: aravindkumar0895/aravind:14
         ports:
         - containerPort: 8000
